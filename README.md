@@ -13,7 +13,17 @@
 - Use CapCut to create short highlight video(https://www.youtube.com/watch?v=RKAqiNoU8ec)
 <img width="400" alt="image" src="https://github.com/user-attachments/assets/3b4d07c5-cd25-4dae-b9a1-a373bf7492aa" />
 
+- AI Recruiter: Automated candidate information collection, qualifying applications and sending screening sessions using Mail App
+- AI Marketing Intern: LinkedIn engagement - automated following, liking, and commenting with relevant users
+- AI Marketing Intern: Twitter engagement - automated following, liking, and commenting with relevant users
 
+## To-Do List (Prioritized)
+
+1. **Performance Optimization** - Match speed of Ubuntu desktop alternatives
+2. **Apple Scripts Generation** - Reduce execution time while maintaining flexibility
+3. **VNC Cursor Visibility** - Improve debugging and demo experience
+
+*We welcome contributions!*
 
 ## Features
 
@@ -40,7 +50,7 @@ The macOS native ecosystem remains unmatched in user experience today and will c
 * **Leverage Claude Desktop's Polished UI**: No need for developer-style Python interfaces
 * **Intuitive User Experience**: Interact with your AI-controlled Mac through a familiar, user-friendly interface
 * **Instant Productivity**: Start working immediately without configuration hassles
- 
+
 ## Architecture
 <img width="912" alt="remote_macos_use_system_architecture" src="https://github.com/user-attachments/assets/75ece060-90e2-4ad3-bb52-2c69427001dd" />
 
