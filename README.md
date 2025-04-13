@@ -75,6 +75,12 @@ You can configure Claude Desktop to use the Docker image by adding the following
         "MACOS_PASSWORD=your_macos_password",
         "-e",
         "MACOS_HOST=your_macos_hostname_or_ip",
+        "-e",
+        "LIVEKIT_API_KEY=your_livekit_api_key",
+        "-e",
+        "LIVEKIT_API_SECRET=your_livekit_api_secret",
+        "-e",
+        "LIVEKIT_HOST=your_livekit_host",
         "--rm",
         "buryhuang/mcp-remote-macos-use:latest"
       ]
@@ -83,6 +89,17 @@ You can configure Claude Desktop to use the Docker image by adding the following
 }
 ```
 
+### WebRTC Support via LiveKit
+
+This server now includes WebRTC support through LiveKit integration, enabling:
+- Low-latency real-time screen sharing
+- Improved performance and responsiveness
+- Better network efficiency compared to traditional VNC
+- Automatic quality adaptation based on network conditions
+
+To use WebRTC features, you'll need to:
+1. Set up a LiveKit server or use LiveKit Cloud
+2. Configure the LiveKit environment variables as shown in the configuration example above
 
 ## Developer Instruction
 ### Clone the repo

@@ -20,6 +20,10 @@ import mcp.types as types
 from mcp.server import NotificationOptions, Server
 import mcp.server.stdio
 
+# Import LiveKit
+from livekit import api
+from .livekit_handler import LiveKitHandler
+
 # Import VNC client functionality from the src directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from vnc_client import VNCClient, capture_vnc_screen
@@ -50,12 +54,20 @@ MACOS_USERNAME = os.environ.get('MACOS_USERNAME', '')
 MACOS_PASSWORD = os.environ.get('MACOS_PASSWORD', '')
 VNC_ENCRYPTION = os.environ.get('VNC_ENCRYPTION', 'prefer_on')
 
+# LiveKit configuration
+LIVEKIT_URL = os.environ.get('LIVEKIT_URL', '')
+LIVEKIT_API_KEY = os.environ.get('LIVEKIT_API_KEY', '')
+LIVEKIT_API_SECRET = os.environ.get('LIVEKIT_API_SECRET', '')
+
 # Log environment variable status (without exposing actual values)
 logger.info(f"MACOS_HOST from environment: {'Set' if MACOS_HOST else 'Not set'}")
 logger.info(f"MACOS_PORT from environment: {MACOS_PORT}")
 logger.info(f"MACOS_USERNAME from environment: {'Set' if MACOS_USERNAME else 'Not set'}")
 logger.info(f"MACOS_PASSWORD from environment: {'Set' if MACOS_PASSWORD else 'Not set (Required)'}")
 logger.info(f"VNC_ENCRYPTION from environment: {VNC_ENCRYPTION}")
+logger.info(f"LIVEKIT_URL from environment: {'Set' if LIVEKIT_URL else 'Not set'}")
+logger.info(f"LIVEKIT_API_KEY from environment: {'Set' if LIVEKIT_API_KEY else 'Not set'}")
+logger.info(f"LIVEKIT_API_SECRET from environment: {'Set' if LIVEKIT_API_SECRET else 'Not set'}")
 
 # Validate required environment variables
 if not MACOS_HOST:
@@ -71,6 +83,28 @@ async def main():
     """Run the Remote MacOS MCP server."""
     logger.info("Remote MacOS computer use server starting")
     
+    # Initialize LiveKit handler if environment variables are set
+    livekit_handler = None
+    if all([LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET]):
+        livekit_handler = LiveKitHandler()
+        
+        # Generate access token for the room
+        token = api.AccessToken() \
+            .with_identity("remote-macos-bot") \
+            .with_name("Remote MacOS Bot") \
+            .with_grants(api.VideoGrants(
+                room_join=True,
+                room="remote-macos-room",
+            )).to_jwt()
+        
+        # Start LiveKit connection
+        success = await livekit_handler.start("remote-macos-room", token)
+        if success:
+            logger.info("LiveKit connection established")
+        else:
+            logger.warning("Failed to establish LiveKit connection")
+            livekit_handler = None
+
     # Validate required environment variables
     if not MACOS_HOST:
         logger.error("MACOS_HOST environment variable is required but not set")
@@ -217,18 +251,22 @@ async def main():
 
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         logger.info("Server running with stdio transport")
-        await server.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
-                server_name="vnc-client",
-                server_version="0.1.0",
-                capabilities=server.get_capabilities(
-                    notification_options=NotificationOptions(),
-                    experimental_capabilities={},
+        try:
+            await server.run(
+                read_stream,
+                write_stream,
+                InitializationOptions(
+                    server_name="vnc-client",
+                    server_version="0.1.0",
+                    capabilities=server.get_capabilities(
+                        notification_options=NotificationOptions(),
+                        experimental_capabilities={},
+                    ),
                 ),
-            ),
-        )
+            )
+        finally:
+            if livekit_handler:
+                await livekit_handler.stop()
 
 if __name__ == "__main__":
     # Load environment variables from .env file if it exists
