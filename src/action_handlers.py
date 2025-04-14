@@ -3,6 +3,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import base64
 import os
 import sys
+import subprocess
+import time
 
 import mcp.types as types
 # Import vnc_client from the current directory
@@ -721,6 +723,79 @@ def handle_remote_macos_batch_actions(arguments: dict[str, Any]) -> list[types.T
                 return [types.TextContent(type="text", text=f"Action {i}: {str(e)}")]
 
         return []
+
+    finally:
+        # Close VNC connection
+        vnc.close()
+
+
+def handle_remote_macos_open_application(arguments: dict[str, Any]) -> List[types.TextContent]:
+    """
+    Opens or activates an application on the remote MacOS machine using VNC.
+
+    Args:
+        arguments: Dictionary containing:
+            - identifier: App name, path, or bundle ID
+
+    Returns:
+        List containing a TextContent with the result
+    """
+    # Use environment variables
+    host = MACOS_HOST
+    port = MACOS_PORT
+    password = MACOS_PASSWORD
+    username = MACOS_USERNAME
+    encryption = VNC_ENCRYPTION
+
+    identifier = arguments.get("identifier")
+    if not identifier:
+        raise ValueError("identifier is required")
+
+    start_time = time.time()
+
+    # Initialize VNC client
+    vnc = VNCClient(host=host, port=port, password=password, username=username, encryption=encryption)
+
+    # Connect to remote MacOs machine
+    success, error_message = vnc.connect()
+    if not success:
+        error_msg = f"Failed to connect to remote MacOs machine at {host}:{port}. {error_message}"
+        return [types.TextContent(type="text", text=error_msg)]
+
+    try:
+        # Send Command+Space to open Spotlight
+        cmd_key = 0xffeb  # Command key
+        space_key = 0x20  # Space key
+
+        # Press Command+Space
+        vnc.send_key_event(cmd_key, True)
+        vnc.send_key_event(space_key, True)
+
+        # Release Command+Space
+        vnc.send_key_event(space_key, False)
+        vnc.send_key_event(cmd_key, False)
+
+        # Small delay to let Spotlight open
+        time.sleep(0.5)
+
+        # Type the application name
+        vnc.send_text(identifier)
+
+        # Small delay to let Spotlight find the app
+        time.sleep(0.5)
+
+        # Press Enter to launch
+        enter_key = 0xff0d
+        vnc.send_key_event(enter_key, True)
+        vnc.send_key_event(enter_key, False)
+
+        end_time = time.time()
+        processing_time = round(end_time - start_time, 3)
+
+        return [types.TextContent(
+            type="text",
+            text=f"Launched application: {identifier}\nProcessing time: {processing_time}s"
+        )]
 
     finally:
         # Close VNC connection

@@ -37,7 +37,8 @@ from action_handlers import (
     handle_remote_macos_mouse_move,
     handle_remote_macos_mouse_click,
     handle_remote_macos_mouse_double_click,
-    handle_remote_macos_batch_actions
+    handle_remote_macos_batch_actions,
+    handle_remote_macos_open_application
 )
 
 # Configure logging
@@ -239,13 +240,14 @@ async def main():
                                         "enum": ["up", "down"]
                                     },
                                     "button": {"type": "integer", "description": "Mouse button for click/drag actions (1=left, 2=middle, 3=right)", "default": 1},
-                                    "text": {"type": "string", "description": "Text to send as keystrokes"},
-                                    "special_key": {"type": "string", "description": "Special key to send (e.g., 'enter', 'backspace', 'tab', 'escape', etc.)"},
-                                    "key_combination": {"type": "string", "description": "Key combination to send (e.g., 'ctrl+c', 'cmd+q', 'ctrl+alt+delete', etc.)"},
+                                    "text": {"type": "string", "description": "Text to send as keystrokes (for keys type)"},
+                                    "special_key": {"type": "string", "description": "Special key to send like 'enter', 'backspace', etc. (for keys type)"},
+                                    "key_combination": {"type": "string", "description": "Key combination to send like 'cmd+c', 'ctrl+alt+delete' (for key_combination type)"},
                                     "start_x": {"type": "integer", "description": "Starting X coordinate for drag actions"},
                                     "start_y": {"type": "integer", "description": "Starting Y coordinate for drag actions"},
                                     "end_x": {"type": "integer", "description": "Ending X coordinate for drag actions"},
-                                    "end_y": {"type": "integer", "description": "Ending Y coordinate for drag actions"}
+                                    "end_y": {"type": "integer", "description": "Ending Y coordinate for drag actions"},
+                                    "steps": {"type": "integer", "description": "Number of steps for drag actions", "default": 10}
                                 },
                                 "required": ["type"]
                             }
@@ -254,6 +256,20 @@ async def main():
                         "source_height": {"type": "integer", "description": "Height of the reference screen for coordinate scaling", "default": 768}
                     },
                     "required": ["actions"]
+                },
+            ),
+            types.Tool(
+                name="remote_macos_open_application",
+                description="Opens/activates an application and returns its PID for further interactions.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "identifier": {
+                            "type": "string",
+                            "description": "REQUIRED. App name, path, or bundle ID."
+                        }
+                    },
+                    "required": ["identifier"]
                 },
             ),
         ]
@@ -287,6 +303,9 @@ async def main():
 
             elif name == "remote_macos_batch_actions":
                 return handle_remote_macos_batch_actions(arguments)
+
+            elif name == "remote_macos_open_application":
+                return handle_remote_macos_open_application(arguments)
 
             else:
                 raise ValueError(f"Unknown tool: {name}")
