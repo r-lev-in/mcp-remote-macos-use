@@ -479,3 +479,168 @@ Scale factors: {scale_factors['x']:.4f}x, {scale_factors['y']:.4f}y"""
     finally:
         # Close VNC connection
         vnc.close()
+
+
+def handle_remote_macos_batch_actions(arguments: dict[str, Any]) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    """Execute multiple actions on a remote MacOs machine using a single VNC connection."""
+    # Use environment variables
+    host = MACOS_HOST
+    port = MACOS_PORT
+    password = MACOS_PASSWORD
+    username = MACOS_USERNAME
+    encryption = VNC_ENCRYPTION
+
+    # Get required parameters from arguments
+    actions = arguments.get("actions", [])
+    source_width = int(arguments.get("source_width", 1366))
+    source_height = int(arguments.get("source_height", 768))
+
+    if not actions:
+        raise ValueError("At least one action is required")
+
+    # Ensure source dimensions are positive
+    if source_width <= 0 or source_height <= 0:
+        raise ValueError("Source dimensions must be positive values")
+
+    # Initialize VNC client
+    vnc = VNCClient(host=host, port=port, password=password, username=username, encryption=encryption)
+
+    # Connect to remote MacOs machine
+    success, error_message = vnc.connect()
+    if not success:
+        error_msg = f"Failed to connect to remote MacOs machine at {host}:{port}. {error_message}"
+        return [types.TextContent(type="text", text=error_msg)]
+
+    try:
+        # Get target screen dimensions for coordinate scaling
+        target_width = vnc.width
+        target_height = vnc.height
+
+        # Calculate scale factors
+        scale_x = target_width / source_width
+        scale_y = target_height / source_height
+
+        # Process each action in sequence
+        for i, action in enumerate(actions):
+            action_type = action.get("type")
+            if not action_type:
+                return [types.TextContent(type="text", text=f"Action {i}: Missing action type")]
+
+            try:
+                if action_type == "click":
+                    x = action.get("x")
+                    y = action.get("y")
+                    button = action.get("button", 1)
+                    if x is None or y is None:
+                        return [types.TextContent(type="text", text=f"Action {i}: Missing coordinates for click")]
+
+                    scaled_x = int(x * scale_x)
+                    scaled_y = int(y * scale_y)
+                    if not vnc.send_mouse_click(scaled_x, scaled_y, button):
+                        return [types.TextContent(type="text", text=f"Action {i}: Click failed at ({scaled_x}, {scaled_y})")]
+
+                elif action_type == "mouse_scroll":
+                    x = action.get("x")
+                    y = action.get("y")
+                    direction = action.get("direction", "down")
+                    if x is None or y is None:
+                        return [types.TextContent(type="text", text=f"Action {i}: Missing coordinates for scroll")]
+
+                    # Scale coordinates
+                    scaled_x = int(x * scale_x)
+                    scaled_y = int(y * scale_y)
+
+                    # Ensure coordinates are within the screen bounds
+                    scaled_x = max(0, min(scaled_x, target_width - 1))
+                    scaled_y = max(0, min(scaled_y, target_height - 1))
+
+                    # Move to position and send scroll event
+                    if not vnc.send_pointer_event(scaled_x, scaled_y, 0):
+                        return [types.TextContent(type="text", text=f"Action {i}: Failed to move to scroll position")]
+
+                    # Set button mask for scroll (bit 3 for up, bit 4 for down)
+                    button_mask = 8 if direction.lower() == "up" else 16
+                    if not vnc.send_pointer_event(scaled_x, scaled_y, button_mask):
+                        return [types.TextContent(type="text", text=f"Action {i}: Failed to send scroll event")]
+
+                    # Release scroll
+                    if not vnc.send_pointer_event(scaled_x, scaled_y, 0):
+                        return [types.TextContent(type="text", text=f"Action {i}: Failed to release scroll")]
+
+                elif action_type == "keys":
+                    text = action.get("text")
+                    special_key = action.get("special_key")
+                    if text:
+                        if not vnc.send_text(text):
+                            return [types.TextContent(type="text", text=f"Action {i}: Failed to send text")]
+                    elif special_key:
+                        if not vnc.send_key_combination(special_key):
+                            return [types.TextContent(type="text", text=f"Action {i}: Failed to send special key")]
+                    else:
+                        return [types.TextContent(type="text", text=f"Action {i}: Missing text or special_key")]
+
+                elif action_type == "key_combination":
+                    combo = action.get("key_combination")
+                    if not combo:
+                        return [types.TextContent(type="text", text=f"Action {i}: Missing key_combination")]
+                    if not vnc.send_key_combination(combo):
+                        return [types.TextContent(type="text", text=f"Action {i}: Failed to send key combination")]
+
+                elif action_type == "drag":
+                    start_x = action.get("start_x")
+                    start_y = action.get("start_y")
+                    end_x = action.get("end_x")
+                    end_y = action.get("end_y")
+                    button = action.get("button", 1)
+                    steps = action.get("steps", 10)
+
+                    if any(x is None for x in [start_x, start_y, end_x, end_y]):
+                        return [types.TextContent(type="text", text=f"Action {i}: Missing coordinates for drag")]
+
+                    # Scale coordinates
+                    scaled_start_x = int(start_x * scale_x)
+                    scaled_start_y = int(start_y * scale_y)
+                    scaled_end_x = int(end_x * scale_x)
+                    scaled_end_y = int(end_y * scale_y)
+
+                    # Ensure coordinates are within the screen bounds
+                    scaled_start_x = max(0, min(scaled_start_x, target_width - 1))
+                    scaled_start_y = max(0, min(scaled_start_y, target_height - 1))
+                    scaled_end_x = max(0, min(scaled_end_x, target_width - 1))
+                    scaled_end_y = max(0, min(scaled_end_y, target_height - 1))
+
+                    # Calculate step sizes
+                    dx = (scaled_end_x - scaled_start_x) / steps
+                    dy = (scaled_end_y - scaled_start_y) / steps
+
+                    # Move to start position
+                    if not vnc.send_pointer_event(scaled_start_x, scaled_start_y, 0):
+                        return [types.TextContent(type="text", text=f"Action {i}: Failed to move to start position")]
+
+                    # Press button
+                    button_mask = 1 << (button - 1)
+                    if not vnc.send_pointer_event(scaled_start_x, scaled_start_y, button_mask):
+                        return [types.TextContent(type="text", text=f"Action {i}: Failed to press mouse button")]
+
+                    # Perform drag
+                    for step in range(1, steps + 1):
+                        current_x = int(scaled_start_x + dx * step)
+                        current_y = int(scaled_start_y + dy * step)
+                        if not vnc.send_pointer_event(current_x, current_y, button_mask):
+                            return [types.TextContent(type="text", text=f"Action {i}: Failed during drag at step {step}")]
+
+                    # Release button at final position
+                    if not vnc.send_pointer_event(scaled_end_x, scaled_end_y, 0):
+                        return [types.TextContent(type="text", text=f"Action {i}: Failed to release mouse button")]
+
+                else:
+                    return [types.TextContent(type="text", text=f"Action {i}: Unknown action type '{action_type}'")]
+
+            except Exception as e:
+                return [types.TextContent(type="text", text=f"Action {i}: {str(e)}")]
+
+        return []
+
+    finally:
+        # Close VNC connection
+        vnc.close()

@@ -36,7 +36,8 @@ from action_handlers import (
     handle_remote_macos_send_keys,
     handle_remote_macos_mouse_move,
     handle_remote_macos_mouse_click,
-    handle_remote_macos_mouse_double_click
+    handle_remote_macos_mouse_double_click,
+    handle_remote_macos_batch_actions
 )
 
 # Configure logging
@@ -82,12 +83,12 @@ if not MACOS_PASSWORD:
 async def main():
     """Run the Remote MacOS MCP server."""
     logger.info("Remote MacOS computer use server starting")
-    
+
     # Initialize LiveKit handler if environment variables are set
     livekit_handler = None
     if all([LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET]):
         livekit_handler = LiveKitHandler()
-        
+
         # Generate access token for the room
         token = api.AccessToken() \
             .with_identity("remote-macos-bot") \
@@ -96,7 +97,7 @@ async def main():
                 room_join=True,
                 room="remote-macos-room",
             )).to_jwt()
-        
+
         # Start LiveKit connection
         success = await livekit_handler.start("remote-macos-room", token)
         if success:
@@ -113,7 +114,7 @@ async def main():
     if not MACOS_PASSWORD:
         logger.error("MACOS_PASSWORD environment variable is required but not set")
         raise ValueError("MACOS_PASSWORD environment variable is required but not set")
-    
+
     server = Server("remote-macos-client")
 
     @server.list_resources()
@@ -147,8 +148,8 @@ async def main():
                         "source_width": {"type": "integer", "description": "Width of the reference screen for coordinate scaling", "default": 1366},
                         "source_height": {"type": "integer", "description": "Height of the reference screen for coordinate scaling", "default": 768},
                         "direction": {
-                            "type": "string", 
-                            "description": "Scroll direction", 
+                            "type": "string",
+                            "description": "Scroll direction",
                             "enum": ["up", "down"],
                             "default": "down"
                         }
@@ -213,6 +214,48 @@ async def main():
                     "required": ["x", "y"]
                 },
             ),
+            types.Tool(
+                name="remote_macos_batch_actions",
+                description="Execute multiple actions for elements that don't change state. For instance dropdowns change ui state, don't use for dropdowns. But you can use for anything else that doesn't. For instance if you see a search bar, you can execute 3 actions mouse cick, key send for text and key send for enter to submit search. Supports clicks, key presses, drags, and scrolls.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "actions": {
+                            "type": "array",
+                            "description": "List of actions to perform",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "type": {
+                                        "type": "string",
+                                        "enum": ["click", "keys", "key_combination", "drag", "mouse_scroll"],
+                                        "description": "Type of action to perform"
+                                    },
+                                    "x": {"type": "integer", "description": "X coordinate for click/scroll actions"},
+                                    "y": {"type": "integer", "description": "Y coordinate for click/scroll actions"},
+                                    "direction": {
+                                        "type": "string",
+                                        "description": "Scroll direction",
+                                        "enum": ["up", "down"]
+                                    },
+                                    "button": {"type": "integer", "description": "Mouse button for click/drag actions (1=left, 2=middle, 3=right)", "default": 1},
+                                    "text": {"type": "string", "description": "Text to send as keystrokes"},
+                                    "special_key": {"type": "string", "description": "Special key to send (e.g., 'enter', 'backspace', 'tab', 'escape', etc.)"},
+                                    "key_combination": {"type": "string", "description": "Key combination to send (e.g., 'ctrl+c', 'cmd+q', 'ctrl+alt+delete', etc.)"},
+                                    "start_x": {"type": "integer", "description": "Starting X coordinate for drag actions"},
+                                    "start_y": {"type": "integer", "description": "Starting Y coordinate for drag actions"},
+                                    "end_x": {"type": "integer", "description": "Ending X coordinate for drag actions"},
+                                    "end_y": {"type": "integer", "description": "Ending Y coordinate for drag actions"}
+                                },
+                                "required": ["type"]
+                            }
+                        },
+                        "source_width": {"type": "integer", "description": "Width of the reference screen for coordinate scaling", "default": 1366},
+                        "source_height": {"type": "integer", "description": "Height of the reference screen for coordinate scaling", "default": 768}
+                    },
+                    "required": ["actions"]
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -223,25 +266,28 @@ async def main():
         try:
             if not arguments:
                 arguments = {}
-            
+
             if name == "remote_macos_get_screen":
                 return await handle_remote_macos_get_screen(arguments)
-                
+
             elif name == "remote_macos_mouse_scroll":
-                return handle_remote_macos_mouse_scroll(arguments)            
-            
+                return handle_remote_macos_mouse_scroll(arguments)
+
             elif name == "remote_macos_send_keys":
                 return handle_remote_macos_send_keys(arguments)
-            
+
             elif name == "remote_macos_mouse_move":
                 return handle_remote_macos_mouse_move(arguments)
-                    
+
             elif name == "remote_macos_mouse_click":
                 return handle_remote_macos_mouse_click(arguments)
-                    
+
             elif name == "remote_macos_mouse_double_click":
                 return handle_remote_macos_mouse_double_click(arguments)
-                    
+
+            elif name == "remote_macos_batch_actions":
+                return handle_remote_macos_batch_actions(arguments)
+
             else:
                 raise ValueError(f"Unknown tool: {name}")
 
@@ -271,7 +317,7 @@ async def main():
 if __name__ == "__main__":
     # Load environment variables from .env file if it exists
     load_dotenv()
-    
+
     try:
         # Run the server
         asyncio.run(main())
@@ -282,4 +328,4 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}", exc_info=True)
         print(f"ERROR: Unexpected error occurred: {str(e)}")
-        sys.exit(1) 
+        sys.exit(1)
