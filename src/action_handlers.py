@@ -520,6 +520,60 @@ def handle_remote_macos_batch_actions(arguments: dict[str, Any]) -> list[types.T
         scale_x = target_width / source_width
         scale_y = target_height / source_height
 
+        # Map of special key names to X11 keysyms
+        special_keys = {
+            "enter": 0xff0d,
+            "return": 0xff0d,
+            "backspace": 0xff08,
+            "tab": 0xff09,
+            "escape": 0xff1b,
+            "esc": 0xff1b,
+            "delete": 0xffff,
+            "del": 0xffff,
+            "home": 0xff50,
+            "end": 0xff57,
+            "page_up": 0xff55,
+            "page_down": 0xff56,
+            "left": 0xff51,
+            "up": 0xff52,
+            "right": 0xff53,
+            "down": 0xff54,
+            "f1": 0xffbe,
+            "f2": 0xffbf,
+            "f3": 0xffc0,
+            "f4": 0xffc1,
+            "f5": 0xffc2,
+            "f6": 0xffc3,
+            "f7": 0xffc4,
+            "f8": 0xffc5,
+            "f9": 0xffc6,
+            "f10": 0xffc7,
+            "f11": 0xffc8,
+            "f12": 0xffc9,
+            "space": 0x20,
+        }
+
+        # Map of modifier key names to X11 keysyms
+        modifier_keys = {
+            "ctrl": 0xffe3,    # Control_L
+            "control": 0xffe3,  # Control_L
+            "shift": 0xffe1,   # Shift_L
+            "alt": 0xffe9,     # Alt_L
+            "option": 0xffe9,  # Alt_L (Mac convention)
+            "cmd": 0xffeb,     # Command_L (Mac convention)
+            "command": 0xffeb,  # Command_L (Mac convention)
+            "win": 0xffeb,     # Command_L
+            "super": 0xffeb,   # Command_L
+            "fn": 0xffed,      # Function key
+            "meta": 0xffeb,    # Command_L (Mac convention)
+        }
+
+        # Map for letter keys (a-z)
+        letter_keys = {chr(i): i for i in range(ord('a'), ord('z') + 1)}
+
+        # Map for number keys (0-9)
+        number_keys = {str(i): ord(str(i)) for i in range(10)}
+
         # Process each action in sequence
         for i, action in enumerate(actions):
             action_type = action.get("type")
@@ -574,6 +628,7 @@ def handle_remote_macos_batch_actions(arguments: dict[str, Any]) -> list[types.T
                         if not vnc.send_text(text):
                             return [types.TextContent(type="text", text=f"Action {i}: Failed to send text")]
                     elif special_key:
+                        # Convert special key to key combination format for consistency
                         if not vnc.send_key_combination(special_key):
                             return [types.TextContent(type="text", text=f"Action {i}: Failed to send special key")]
                     else:
@@ -583,8 +638,34 @@ def handle_remote_macos_batch_actions(arguments: dict[str, Any]) -> list[types.T
                     combo = action.get("key_combination")
                     if not combo:
                         return [types.TextContent(type="text", text=f"Action {i}: Missing key_combination")]
-                    if not vnc.send_key_combination(combo):
-                        return [types.TextContent(type="text", text=f"Action {i}: Failed to send key combination")]
+
+                    # Process key combination similar to send_keys
+                    keys = []
+                    for part in combo.lower().split('+'):
+                        part = part.strip()
+                        if part in modifier_keys:
+                            keys.append(modifier_keys[part])
+                        elif part in special_keys:
+                            keys.append(special_keys[part])
+                        elif part in letter_keys:
+                            keys.append(letter_keys[part])
+                        elif part in number_keys:
+                            keys.append(number_keys[part])
+                        elif len(part) == 1:
+                            # For any other single character keys
+                            keys.append(ord(part))
+                        else:
+                            return [types.TextContent(type="text", text=f"Action {i}: Unknown key in combination: {part}")]
+
+                    # Send all key press events
+                    for key in keys:
+                        if not vnc.send_key_event(key, True):
+                            return [types.TextContent(type="text", text=f"Action {i}: Failed to press key in combination")]
+
+                    # Send all key release events in reverse order
+                    for key in reversed(keys):
+                        if not vnc.send_key_event(key, False):
+                            return [types.TextContent(type="text", text=f"Action {i}: Failed to release key in combination")]
 
                 elif action_type == "drag":
                     start_x = action.get("start_x")
