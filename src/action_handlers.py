@@ -800,3 +800,105 @@ def handle_remote_macos_open_application(arguments: dict[str, Any]) -> List[type
     finally:
         # Close VNC connection
         vnc.close()
+
+
+def handle_remote_macos_mouse_drag(arguments: dict[str, Any]) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    """Perform a mouse drag operation on a remote MacOs machine."""
+    # Use environment variables
+    host = MACOS_HOST
+    port = MACOS_PORT
+    password = MACOS_PASSWORD
+    username = MACOS_USERNAME
+    encryption = VNC_ENCRYPTION
+
+    # Get required parameters from arguments
+    start_x = arguments.get("start_x")
+    start_y = arguments.get("start_y")
+    end_x = arguments.get("end_x")
+    end_y = arguments.get("end_y")
+    source_width = int(arguments.get("source_width", 1366))
+    source_height = int(arguments.get("source_height", 768))
+    button = int(arguments.get("button", 1))
+    steps = int(arguments.get("steps", 10))
+    delay_ms = int(arguments.get("delay_ms", 10))
+
+    # Validate required parameters
+    if any(x is None for x in [start_x, start_y, end_x, end_y]):
+        raise ValueError("start_x, start_y, end_x, and end_y coordinates are required")
+
+    # Ensure source dimensions are positive
+    if source_width <= 0 or source_height <= 0:
+        raise ValueError("Source dimensions must be positive values")
+
+    # Initialize VNC client
+    vnc = VNCClient(host=host, port=port, password=password, username=username, encryption=encryption)
+
+    # Connect to remote MacOs machine
+    success, error_message = vnc.connect()
+    if not success:
+        error_msg = f"Failed to connect to remote MacOs machine at {host}:{port}. {error_message}"
+        return [types.TextContent(type="text", text=error_msg)]
+
+    try:
+        # Get target screen dimensions
+        target_width = vnc.width
+        target_height = vnc.height
+
+        # Scale coordinates
+        scaled_start_x = int((start_x / source_width) * target_width)
+        scaled_start_y = int((start_y / source_height) * target_height)
+        scaled_end_x = int((end_x / source_width) * target_width)
+        scaled_end_y = int((end_y / source_height) * target_height)
+
+        # Ensure coordinates are within the screen bounds
+        scaled_start_x = max(0, min(scaled_start_x, target_width - 1))
+        scaled_start_y = max(0, min(scaled_start_y, target_height - 1))
+        scaled_end_x = max(0, min(scaled_end_x, target_width - 1))
+        scaled_end_y = max(0, min(scaled_end_y, target_height - 1))
+
+        # Calculate step sizes
+        dx = (scaled_end_x - scaled_start_x) / steps
+        dy = (scaled_end_y - scaled_start_y) / steps
+
+        # Move to start position
+        if not vnc.send_pointer_event(scaled_start_x, scaled_start_y, 0):
+            return [types.TextContent(type="text", text="Failed to move to start position")]
+
+        # Press button
+        button_mask = 1 << (button - 1)
+        if not vnc.send_pointer_event(scaled_start_x, scaled_start_y, button_mask):
+            return [types.TextContent(type="text", text="Failed to press mouse button")]
+
+        # Perform drag
+        for step in range(1, steps + 1):
+            current_x = int(scaled_start_x + dx * step)
+            current_y = int(scaled_start_y + dy * step)
+            if not vnc.send_pointer_event(current_x, current_y, button_mask):
+                return [types.TextContent(type="text", text=f"Failed during drag at step {step}")]
+            time.sleep(delay_ms / 1000.0)  # Convert ms to seconds
+
+        # Release button at final position
+        if not vnc.send_pointer_event(scaled_end_x, scaled_end_y, 0):
+            return [types.TextContent(type="text", text="Failed to release mouse button")]
+
+        # Prepare the response with useful details
+        scale_factors = {
+            "x": target_width / source_width,
+            "y": target_height / source_height
+        }
+
+        return [types.TextContent(
+            type="text",
+            text=f"""Mouse drag (button {button}) completed:
+From source ({start_x}, {start_y}) to ({end_x}, {end_y})
+From target ({scaled_start_x}, {scaled_start_y}) to ({scaled_end_x}, {scaled_end_y})
+Source dimensions: {source_width}x{source_height}
+Target dimensions: {target_width}x{target_height}
+Scale factors: {scale_factors['x']:.4f}x, {scale_factors['y']:.4f}y
+Steps: {steps}
+Delay: {delay_ms}ms"""
+        )]
+
+    finally:
+        # Close VNC connection
+        vnc.close()

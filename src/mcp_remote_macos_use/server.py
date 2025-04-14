@@ -38,7 +38,8 @@ from action_handlers import (
     handle_remote_macos_mouse_click,
     handle_remote_macos_mouse_double_click,
     handle_remote_macos_batch_actions,
-    handle_remote_macos_open_application
+    handle_remote_macos_open_application,
+    handle_remote_macos_mouse_drag
 )
 
 # Configure logging
@@ -272,6 +273,25 @@ async def main():
                     "required": ["identifier"]
                 },
             ),
+            types.Tool(
+                name="remote_macos_mouse_drag",
+                description="Perform a mouse drag operation from start point to end point on a remote MacOs machine, with automatic coordinate scaling. Uses environment variables for connection details.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "start_x": {"type": "integer", "description": "Starting X coordinate (in source dimensions)"},
+                        "start_y": {"type": "integer", "description": "Starting Y coordinate (in source dimensions)"},
+                        "end_x": {"type": "integer", "description": "Ending X coordinate (in source dimensions)"},
+                        "end_y": {"type": "integer", "description": "Ending Y coordinate (in source dimensions)"},
+                        "source_width": {"type": "integer", "description": "Width of the reference screen for coordinate scaling", "default": 1366},
+                        "source_height": {"type": "integer", "description": "Height of the reference screen for coordinate scaling", "default": 768},
+                        "button": {"type": "integer", "description": "Mouse button (1=left, 2=middle, 3=right)", "default": 1},
+                        "steps": {"type": "integer", "description": "Number of intermediate points for smooth dragging", "default": 10},
+                        "delay_ms": {"type": "integer", "description": "Delay between steps in milliseconds", "default": 10}
+                    },
+                    "required": ["start_x", "start_y", "end_x", "end_y"]
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -306,6 +326,9 @@ async def main():
 
             elif name == "remote_macos_open_application":
                 return handle_remote_macos_open_application(arguments)
+
+            elif name == "remote_macos_mouse_drag":
+                return handle_remote_macos_mouse_drag(arguments)
 
             else:
                 raise ValueError(f"Unknown tool: {name}")
