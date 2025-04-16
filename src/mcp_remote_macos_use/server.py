@@ -38,7 +38,7 @@ from action_handlers import (
     handle_remote_macos_mouse_click,
     handle_remote_macos_mouse_double_click,
     handle_remote_macos_open_application,
-    handle_remote_macos_mouse_drag
+    handle_remote_macos_mouse_drag_n_drop
 )
 
 # Configure logging
@@ -230,8 +230,8 @@ async def main():
                 },
             ),
             types.Tool(
-                name="remote_macos_mouse_drag",
-                description="Perform a mouse drag operation from start point to end point on a remote MacOs machine, with automatic coordinate scaling. Uses environment variables for connection details.",
+                name="remote_macos_mouse_drag_n_drop",
+                description="Perform a mouse drag operation from start point and drop to end point on a remote MacOs machine, with automatic coordinate scaling.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -280,8 +280,8 @@ async def main():
             elif name == "remote_macos_open_application":
                 return handle_remote_macos_open_application(arguments)
 
-            elif name == "remote_macos_mouse_drag":
-                return handle_remote_macos_mouse_drag(arguments)
+            elif name == "remote_macos_mouse_drag_n_drop":
+                return handle_remote_macos_mouse_drag_n_drop(arguments)
 
             else:
                 raise ValueError(f"Unknown tool: {name}")
