@@ -36,7 +36,9 @@ from action_handlers import (
     handle_remote_macos_send_keys,
     handle_remote_macos_mouse_move,
     handle_remote_macos_mouse_click,
-    handle_remote_macos_mouse_double_click
+    handle_remote_macos_mouse_double_click,
+    handle_remote_macos_open_application,
+    handle_remote_macos_mouse_drag
 )
 
 # Configure logging
@@ -82,12 +84,12 @@ if not MACOS_PASSWORD:
 async def main():
     """Run the Remote MacOS MCP server."""
     logger.info("Remote MacOS computer use server starting")
-    
+
     # Initialize LiveKit handler if environment variables are set
     livekit_handler = None
     if all([LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET]):
         livekit_handler = LiveKitHandler()
-        
+
         # Generate access token for the room
         token = api.AccessToken() \
             .with_identity("remote-macos-bot") \
@@ -96,7 +98,7 @@ async def main():
                 room_join=True,
                 room="remote-macos-room",
             )).to_jwt()
-        
+
         # Start LiveKit connection
         success = await livekit_handler.start("remote-macos-room", token)
         if success:
@@ -113,7 +115,7 @@ async def main():
     if not MACOS_PASSWORD:
         logger.error("MACOS_PASSWORD environment variable is required but not set")
         raise ValueError("MACOS_PASSWORD environment variable is required but not set")
-    
+
     server = Server("remote-macos-client")
 
     @server.list_resources()
@@ -147,8 +149,8 @@ async def main():
                         "source_width": {"type": "integer", "description": "Width of the reference screen for coordinate scaling", "default": 1366},
                         "source_height": {"type": "integer", "description": "Height of the reference screen for coordinate scaling", "default": 768},
                         "direction": {
-                            "type": "string", 
-                            "description": "Scroll direction", 
+                            "type": "string",
+                            "description": "Scroll direction",
                             "enum": ["up", "down"],
                             "default": "down"
                         }
@@ -213,6 +215,39 @@ async def main():
                     "required": ["x", "y"]
                 },
             ),
+            types.Tool(
+                name="remote_macos_open_application",
+                description="Opens/activates an application and returns its PID for further interactions.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "identifier": {
+                            "type": "string",
+                            "description": "REQUIRED. App name, path, or bundle ID."
+                        }
+                    },
+                    "required": ["identifier"]
+                },
+            ),
+            types.Tool(
+                name="remote_macos_mouse_drag",
+                description="Perform a mouse drag operation from start point to end point on a remote MacOs machine, with automatic coordinate scaling. Uses environment variables for connection details.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "start_x": {"type": "integer", "description": "Starting X coordinate (in source dimensions)"},
+                        "start_y": {"type": "integer", "description": "Starting Y coordinate (in source dimensions)"},
+                        "end_x": {"type": "integer", "description": "Ending X coordinate (in source dimensions)"},
+                        "end_y": {"type": "integer", "description": "Ending Y coordinate (in source dimensions)"},
+                        "source_width": {"type": "integer", "description": "Width of the reference screen for coordinate scaling", "default": 1366},
+                        "source_height": {"type": "integer", "description": "Height of the reference screen for coordinate scaling", "default": 768},
+                        "button": {"type": "integer", "description": "Mouse button (1=left, 2=middle, 3=right)", "default": 1},
+                        "steps": {"type": "integer", "description": "Number of intermediate points for smooth dragging", "default": 10},
+                        "delay_ms": {"type": "integer", "description": "Delay between steps in milliseconds", "default": 10}
+                    },
+                    "required": ["start_x", "start_y", "end_x", "end_y"]
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -223,25 +258,31 @@ async def main():
         try:
             if not arguments:
                 arguments = {}
-            
+
             if name == "remote_macos_get_screen":
                 return await handle_remote_macos_get_screen(arguments)
-                
+
             elif name == "remote_macos_mouse_scroll":
-                return handle_remote_macos_mouse_scroll(arguments)            
-            
+                return handle_remote_macos_mouse_scroll(arguments)
+
             elif name == "remote_macos_send_keys":
                 return handle_remote_macos_send_keys(arguments)
-            
+
             elif name == "remote_macos_mouse_move":
                 return handle_remote_macos_mouse_move(arguments)
-                    
+
             elif name == "remote_macos_mouse_click":
                 return handle_remote_macos_mouse_click(arguments)
-                    
+
             elif name == "remote_macos_mouse_double_click":
                 return handle_remote_macos_mouse_double_click(arguments)
-                    
+
+            elif name == "remote_macos_open_application":
+                return handle_remote_macos_open_application(arguments)
+
+            elif name == "remote_macos_mouse_drag":
+                return handle_remote_macos_mouse_drag(arguments)
+
             else:
                 raise ValueError(f"Unknown tool: {name}")
 
@@ -271,7 +312,7 @@ async def main():
 if __name__ == "__main__":
     # Load environment variables from .env file if it exists
     load_dotenv()
-    
+
     try:
         # Run the server
         asyncio.run(main())
@@ -282,4 +323,4 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}", exc_info=True)
         print(f"ERROR: Unexpected error occurred: {str(e)}")
-        sys.exit(1) 
+        sys.exit(1)
