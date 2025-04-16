@@ -556,7 +556,7 @@ def handle_remote_macos_open_application(arguments: dict[str, Any]) -> List[type
         vnc.close()
 
 
-def handle_remote_macos_mouse_drag(arguments: dict[str, Any]) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+def handle_remote_macos_mouse_drag_n_drop(arguments: dict[str, Any]) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     """Perform a mouse drag operation on a remote MacOs machine."""
     # Use environment variables
     host = MACOS_HOST
