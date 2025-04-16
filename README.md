@@ -141,59 +141,33 @@ The server provides Remote MacOs functionality through MCP tools.
 
 ### Tools Specifications
 
-The server provides four main tools for remote MacOS control:
+The server provides the following tools for remote macOS control:
 
 #### remote_macos_get_screen
-Get a screenshot of the remote desktop. Example:
-```json
-{
-  "host": "remote-macos-hostname-or-ip",
-  "port": 5900,
-  "password": "remote-macos-password",
-  "username": "remote-macos-username",
-  "encryption": "prefer_on"
-}
-```
+Connect to a remote macOS machine and get a screenshot of the remote desktop. Uses environment variables for connection details.
 
 #### remote_macos_send_keys
-Send keyboard input. Example:
-```json
-{
-  "host": "remote-macos-hostname-or-ip",
-  "password": "remote-macos-password",
-  "text": "Hello world!",
-  "special_key": "enter",
-  "key_combination": "cmd+c"
-}
-```
+Send keyboard input to a remote macOS machine. Uses environment variables for connection details.
 
-#### remote_macos_send_mouse
-Send mouse input. Example:
-```json
-{
-  "host": "remote-macos-hostname-or-ip",
-  "password": "remote-macos-password",
-  "x": 500,
-  "y": 300,
-  "button": 1,
-  "action": "click"
-}
-```
+#### remote_macos_mouse_move
+Move the mouse cursor to specified coordinates on a remote macOS machine, with automatic coordinate scaling. Uses environment variables for connection details.
 
-#### remote_macos_scale_coordinates
-Scale coordinates between different screen sizes. Example:
-```json
-{
-  "host": "remote-macos-hostname-or-ip",
-  "password": "remote-macos-password",
-  "source_width": 1366,
-  "source_height": 768,
-  "x": 500,
-  "y": 300
-}
-```
+#### remote_macos_mouse_click
+Perform a mouse click at specified coordinates on a remote macOS machine, with automatic coordinate scaling. Uses environment variables for connection details.
 
-All tools support Apple Authentication (protocol 30) and require at minimum a host and password.
+#### remote_macos_mouse_double_click
+Perform a mouse double-click at specified coordinates on a remote macOS machine, with automatic coordinate scaling. Uses environment variables for connection details.
+
+#### remote_macos_mouse_scroll
+Perform a mouse scroll at specified coordinates on a remote macOS machine, with automatic coordinate scaling. Uses environment variables for connection details.
+
+#### remote_macos_open_application
+Opens/activates an application and returns its PID for further interactions.
+
+#### remote_macos_mouse_drag_n_drop
+Perform a mouse drag operation from start point and drop to end point on a remote macOS machine, with automatic coordinate scaling.
+
+All tools use the environment variables configured during setup instead of requiring connection parameters.
 
 ## Limitations
 
