@@ -75,12 +75,6 @@ You can configure Claude Desktop to use the Docker image by adding the following
         "MACOS_PASSWORD=your_macos_password",
         "-e",
         "MACOS_HOST=your_macos_hostname_or_ip",
-        "-e",
-        "LIVEKIT_API_KEY=your_livekit_api_key",
-        "-e",
-        "LIVEKIT_API_SECRET=your_livekit_api_secret",
-        "-e",
-        "LIVEKIT_HOST=your_livekit_host",
         "--rm",
         "buryhuang/mcp-remote-macos-use:latest"
       ]
