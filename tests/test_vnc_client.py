@@ -8,7 +8,7 @@ import socket
 
 # Add src to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.vnc_client import VNCClient, encrypt_MACOS_PASSWORD, capture_vnc_screen, PixelFormat
+from src.vnc_client import asyncvnc, asyncio, encrypt_MACOS_PASSWORD, capture_vnc_screen, PixelFormat
 
 class TestVNCClient:
     """Test suite for VNCClient class."""
@@ -22,9 +22,9 @@ class TestVNCClient:
             yield socket_instance
     
     @pytest.fixture
-    def vnc_client(self):
+    def run_client(self):
         """Create a VNCClient instance for testing."""
-        return VNCClient(
+        return asyncvnc.connect(host: str, port: int = 5900, username: str | None = None, password: str | None = None, host_key: RSAPublicKey | None = None, opener=None) (
             host="test_host", 
             port=5900, 
             password="test_password", 
