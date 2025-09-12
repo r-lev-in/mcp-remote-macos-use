@@ -5,6 +5,8 @@ import time
 import io
 from PIL import Image
 import pyDes
+import asyncio, asyncvnc
+
 from typing import Optional, Tuple, List, Dict, Any
 
 # Configure logging
