@@ -1,326 +1,338 @@
-import logging
-from typing import Any, Dict, List, Optional, Tuple
-from dotenv import load_dotenv
-import base64
-import socket
-import time
-import io
-from PIL import Image
-import asyncio
-import pyDes
-import json
-import os
-from base64 import b64encode
-from datetime import datetime
-import sys
+"""
+MCP Server modifications to support PiKVM API instead of VNC
 
-# Import MCP server libraries
-from mcp.server.models import InitializationOptions
-import mcp.types as types
-from mcp.server import NotificationOptions, Server
-import mcp.server.stdio
+Key changes needed in the server.py file:
+1. Update tool function signatures to match PiKVM client methods
+2. Fix parameter mapping between MCP tools and PiKVM API
+3. Handle coordinate scaling properly
+4. Map VNC key codes to PiKVM key names
+"""
 
-# Import LiveKit
-from livekit import api
-from .livekit_handler import LiveKitHandler
+# In the server.py file, here are the key modifications needed:
 
-# Import VNC client functionality from the src directory
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from vnc_client import VNCClient, capture_vnc_screen
-
-# Import action handlers from the src directory
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from action_handlers import (
-    handle_remote_macos_get_screen,
-    handle_remote_macos_mouse_scroll,
-    handle_remote_macos_send_keys,
-    handle_remote_macos_mouse_move,
-    handle_remote_macos_mouse_click,
-    handle_remote_macos_mouse_double_click,
-    handle_remote_macos_open_application,
-    handle_remote_macos_mouse_drag_n_drop
-)
-
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('mcp_remote_macos_use')
-logger.setLevel(logging.DEBUG)
-
-# Load environment variables for VNC connection
-MACOS_HOST = os.environ.get('MACOS_HOST', '')
-MACOS_PORT = int(os.environ.get('MACOS_PORT', '443'))
-MACOS_USERNAME = os.environ.get('MACOS_USERNAME', '')
-MACOS_PASSWORD = os.environ.get('MACOS_PASSWORD', '')
-VNC_ENCRYPTION = os.environ.get('VNC_ENCRYPTION', 'prefer_on')
-
-# LiveKit configuration
-LIVEKIT_URL = os.environ.get('LIVEKIT_URL', '')
-LIVEKIT_API_KEY = os.environ.get('LIVEKIT_API_KEY', '')
-LIVEKIT_API_SECRET = os.environ.get('LIVEKIT_API_SECRET', '')
-
-# Log environment variable status (without exposing actual values)
-logger.info(f"MACOS_HOST from environment: {'Set' if MACOS_HOST else 'Not set'}")
-logger.info(f"MACOS_PORT from environment: {MACOS_PORT}")
-logger.info(f"MACOS_USERNAME from environment: {'Set' if MACOS_USERNAME else 'Not set'}")
-logger.info(f"MACOS_PASSWORD from environment: {'Set' if MACOS_PASSWORD else 'Not set (Required)'}")
-logger.info(f"VNC_ENCRYPTION from environment: {VNC_ENCRYPTION}")
-logger.info(f"LIVEKIT_URL from environment: {'Set' if LIVEKIT_URL else 'Not set'}")
-logger.info(f"LIVEKIT_API_KEY from environment: {'Set' if LIVEKIT_API_KEY else 'Not set'}")
-logger.info(f"LIVEKIT_API_SECRET from environment: {'Set' if LIVEKIT_API_SECRET else 'Not set'}")
-
-# Validate required environment variables
-if not MACOS_HOST:
-    logger.error("MACOS_HOST environment variable is required but not set")
-    raise ValueError("MACOS_HOST environment variable is required but not set")
-
-if not MACOS_PASSWORD:
-    logger.error("MACOS_PASSWORD environment variable is required but not set")
-    raise ValueError("MACOS_PASSWORD environment variable is required but not set")
-
-
-async def main():
-    """Run the Remote MacOS MCP server."""
-    logger.info("Remote MacOS computer use server starting")
-
-    # Initialize LiveKit handler if environment variables are set
-    livekit_handler = None
-    if all([LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET]):
-        livekit_handler = LiveKitHandler()
-
-        # Generate access token for the room
-        token = api.AccessToken() \
-            .with_identity("remote-macos-bot") \
-            .with_name("Remote MacOS Bot") \
-            .with_grants(api.VideoGrants(
-                room_join=True,
-                room="remote-macos-room",
-            )).to_jwt()
-
-        # Start LiveKit connection
-        success = await livekit_handler.start("remote-macos-room", token)
-        if success:
-            logger.info("LiveKit connection established")
-        else:
-            logger.warning("Failed to establish LiveKit connection")
-            livekit_handler = None
-
-    # Validate required environment variables
-    if not MACOS_HOST:
-        logger.error("MACOS_HOST environment variable is required but not set")
-        raise ValueError("MACOS_HOST environment variable is required but not set")
-
-    if not MACOS_PASSWORD:
-        logger.error("MACOS_PASSWORD environment variable is required but not set")
-        raise ValueError("MACOS_PASSWORD environment variable is required but not set")
-
-    server = Server("remote-macos-client")
-
-    @server.list_resources()
-    async def handle_list_resources() -> list[types.Resource]:
-        return []
-
-    @server.read_resource()
-    async def handle_read_resource(uri: types.AnyUrl) -> str:
-        return ""
-
-    @server.list_tools()
-    async def handle_list_tools() -> list[types.Tool]:
-        """List available tools"""
-        return [
-            types.Tool(
-                name="remote_macos_get_screen",
-                description="Connect to a remote MacOs machine and get a screenshot of the remote desktop. Uses environment variables for connection details.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {}
-                },
-            ),
-            types.Tool(
-                name="remote_macos_mouse_scroll",
-                description="Perform a mouse scroll at specified coordinates on a remote MacOs machine, with automatic coordinate scaling. Uses environment variables for connection details.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "x": {"type": "integer", "description": "X coordinate for mouse position (in source dimensions)"},
-                        "y": {"type": "integer", "description": "Y coordinate for mouse position (in source dimensions)"},
-                        "source_width": {"type": "integer", "description": "Width of the reference screen for coordinate scaling", "default": 1366},
-                        "source_height": {"type": "integer", "description": "Height of the reference screen for coordinate scaling", "default": 768},
-                        "direction": {
-                            "type": "string",
-                            "description": "Scroll direction",
-                            "enum": ["up", "down"],
-                            "default": "down"
-                        }
-                    },
-                    "required": ["x", "y"]
-                },
-            ),
-            types.Tool(
-                name="remote_macos_send_keys",
-                description="Send keyboard input to a remote MacOs machine. Uses environment variables for connection details.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string", "description": "Text to send as keystrokes"},
-                        "special_key": {"type": "string", "description": "Special key to send (e.g., 'enter', 'backspace', 'tab', 'escape', etc.)"},
-                        "key_combination": {"type": "string", "description": "Key combination to send (e.g., 'ctrl+c', 'cmd+q', 'ctrl+alt+delete', etc.)"}
-                    },
-                    "required": []
-                },
-            ),
-            types.Tool(
-                name="remote_macos_mouse_move",
-                description="Move the mouse cursor to specified coordinates on a remote MacOs machine, with automatic coordinate scaling. Uses environment variables for connection details.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "x": {"type": "integer", "description": "X coordinate for mouse position (in source dimensions)"},
-                        "y": {"type": "integer", "description": "Y coordinate for mouse position (in source dimensions)"},
-                        "source_width": {"type": "integer", "description": "Width of the reference screen for coordinate scaling", "default": 1366},
-                        "source_height": {"type": "integer", "description": "Height of the reference screen for coordinate scaling", "default": 768}
-                    },
-                    "required": ["x", "y"]
-                },
-            ),
-            types.Tool(
-                name="remote_macos_mouse_click",
-                description="Perform a mouse click at specified coordinates on a remote MacOs machine, with automatic coordinate scaling. Uses environment variables for connection details.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "x": {"type": "integer", "description": "X coordinate for mouse position (in source dimensions)"},
-                        "y": {"type": "integer", "description": "Y coordinate for mouse position (in source dimensions)"},
-                        "source_width": {"type": "integer", "description": "Width of the reference screen for coordinate scaling", "default": 1366},
-                        "source_height": {"type": "integer", "description": "Height of the reference screen for coordinate scaling", "default": 768},
-                        "button": {"type": "integer", "description": "Mouse button (1=left, 2=middle, 3=right)", "default": 1}
-                    },
-                    "required": ["x", "y"]
-                },
-            ),
-            types.Tool(
-                name="remote_macos_mouse_double_click",
-                description="Perform a mouse double-click at specified coordinates on a remote MacOs machine, with automatic coordinate scaling. Uses environment variables for connection details.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "x": {"type": "integer", "description": "X coordinate for mouse position (in source dimensions)"},
-                        "y": {"type": "integer", "description": "Y coordinate for mouse position (in source dimensions)"},
-                        "source_width": {"type": "integer", "description": "Width of the reference screen for coordinate scaling", "default": 1366},
-                        "source_height": {"type": "integer", "description": "Height of the reference screen for coordinate scaling", "default": 768},
-                        "button": {"type": "integer", "description": "Mouse button (1=left, 2=middle, 3=right)", "default": 1}
-                    },
-                    "required": ["x", "y"]
-                },
-            ),
-            types.Tool(
-                name="remote_macos_open_application",
-                description="Opens/activates an application and returns its PID for further interactions.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "identifier": {
-                            "type": "string",
-                            "description": "REQUIRED. App name, path, or bundle ID."
-                        }
-                    },
-                    "required": ["identifier"]
-                },
-            ),
-            types.Tool(
-                name="remote_macos_mouse_drag_n_drop",
-                description="Perform a mouse drag operation from start point and drop to end point on a remote MacOs machine, with automatic coordinate scaling.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "start_x": {"type": "integer", "description": "Starting X coordinate (in source dimensions)"},
-                        "start_y": {"type": "integer", "description": "Starting Y coordinate (in source dimensions)"},
-                        "end_x": {"type": "integer", "description": "Ending X coordinate (in source dimensions)"},
-                        "end_y": {"type": "integer", "description": "Ending Y coordinate (in source dimensions)"},
-                        "source_width": {"type": "integer", "description": "Width of the reference screen for coordinate scaling", "default": 1366},
-                        "source_height": {"type": "integer", "description": "Height of the reference screen for coordinate scaling", "default": 768},
-                        "button": {"type": "integer", "description": "Mouse button (1=left, 2=middle, 3=right)", "default": 1},
-                        "steps": {"type": "integer", "description": "Number of intermediate points for smooth dragging", "default": 10},
-                        "delay_ms": {"type": "integer", "description": "Delay between steps in milliseconds", "default": 10}
-                    },
-                    "required": ["start_x", "start_y", "end_x", "end_y"]
-                },
-            ),
-        ]
-
-    @server.call_tool()
-    async def handle_call_tool(
-        name: str, arguments: dict[str, Any] | None
-    ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-        """Handle tool execution requests"""
-        try:
-            if not arguments:
-                arguments = {}
-
-            if name == "remote_macos_get_screen":
-                return await handle_remote_macos_get_screen(arguments)
-
-            elif name == "remote_macos_mouse_scroll":
-                return handle_remote_macos_mouse_scroll(arguments)
-
-            elif name == "remote_macos_send_keys":
-                return handle_remote_macos_send_keys(arguments)
-
-            elif name == "remote_macos_mouse_move":
-                return handle_remote_macos_mouse_move(arguments)
-
-            elif name == "remote_macos_mouse_click":
-                return handle_remote_macos_mouse_click(arguments)
-
-            elif name == "remote_macos_mouse_double_click":
-                return handle_remote_macos_mouse_double_click(arguments)
-
-            elif name == "remote_macos_open_application":
-                return handle_remote_macos_open_application(arguments)
-
-            elif name == "remote_macos_mouse_drag_n_drop":
-                return handle_remote_macos_mouse_drag_n_drop(arguments)
-
-            else:
-                raise ValueError(f"Unknown tool: {name}")
-
-        except Exception as e:
-            logger.error(f"Error in handle_call_tool: {str(e)}", exc_info=True)
-            return [types.TextContent(type="text", text=f"Error: {str(e)}")]
-
-    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-        logger.info("Server running with stdio transport")
-        try:
-            await server.run(
-                read_stream,
-                write_stream,
-                InitializationOptions(
-                    server_name="vnc-client",
-                    server_version="0.1.0",
-                    capabilities=server.get_capabilities(
-                        notification_options=NotificationOptions(),
-                        experimental_capabilities={},
-                    ),
-                ),
-            )
-        finally:
-            if livekit_handler:
-                await livekit_handler.stop()
-
-if __name__ == "__main__":
-    # Load environment variables from .env file if it exists
-    load_dotenv()
-
+# 1. UPDATE MOUSE CLICK FUNCTION
+@server.call_tool()
+async def remote_macos_mouse_click(arguments: dict) -> list[TextContent]:
+    """Handle mouse click with PiKVM API compatibility."""
     try:
-        # Run the server
-        asyncio.run(main())
-    except ValueError as e:
-        logger.error(f"Initialization failed: {str(e)}")
-        print(f"ERROR: {str(e)}")
-        sys.exit(1)
+        # Extract coordinates and scale them properly
+        x = int(arguments.get("x", 0))
+        y = int(arguments.get("y", 0))
+        button = int(arguments.get("button", 1))
+        source_width = int(arguments.get("source_width", 1366))
+        source_height = int(arguments.get("source_height", 768))
+        
+        # Get actual screen dimensions from last screenshot
+        # For PiKVM, we might need to get current dimensions
+        success, screen_data, error, dimensions = await capture_vnc_screen(
+            host=HOST, port=PORT, password=PASSWORD, username=USERNAME
+        )
+        
+        if success and dimensions:
+            target_width, target_height = dimensions
+            
+            # Scale coordinates from source to target dimensions
+            scaled_x = int(x * target_width / source_width)
+            scaled_y = int(y * target_height / source_height)
+        else:
+            # Fallback to original coordinates
+            scaled_x, scaled_y = x, y
+        
+        # Create VNC client for mouse action
+        vnc = VNCClient(host=HOST, port=PORT, password=PASSWORD, username=USERNAME)
+        
+        # Test connection
+        success, error = vnc.connect()
+        if not success:
+            return [TextContent(type="text", text=f"Failed to connect: {error}")]
+        
+        # Map button numbers to PiKVM button names
+        button_map = {1: "left", 2: "middle", 3: "right"}
+        button_name = button_map.get(button, "left")
+        
+        # Send mouse click using PiKVM API
+        success = vnc.send_mouse_click(scaled_x, scaled_y, button=button_name)
+        
+        vnc.close()
+        
+        if success:
+            return [TextContent(type="text", text=f"Mouse click (button {button}) from source ({x}, {y}) to target ({scaled_x}, {scaled_y}) succeeded\nSource dimensions: {source_width}x{source_height}\nTarget dimensions: {target_width}x{target_height}\nScale factors: {target_width/source_width:.4f}x, {target_height/source_height:.4f}y")]
+        else:
+            return [TextContent(type="text", text=f"Mouse click failed")]
+            
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
-        print(f"ERROR: Unexpected error occurred: {str(e)}")
-        sys.exit(1)
+        return [TextContent(type="text", text=f"Error during mouse click: {str(e)}")]
+
+
+# 2. UPDATE DOUBLE CLICK FUNCTION
+@server.call_tool()
+async def remote_macos_mouse_double_click(arguments: dict) -> list[TextContent]:
+    """Handle mouse double-click with PiKVM API compatibility."""
+    try:
+        x = int(arguments.get("x", 0))
+        y = int(arguments.get("y", 0))
+        button = int(arguments.get("button", 1))
+        source_width = int(arguments.get("source_width", 1366))
+        source_height = int(arguments.get("source_height", 768))
+        
+        # Get screen dimensions and scale coordinates (same as single click)
+        success, screen_data, error, dimensions = await capture_vnc_screen(
+            host=HOST, port=PORT, password=PASSWORD, username=USERNAME
+        )
+        
+        if success and dimensions:
+            target_width, target_height = dimensions
+            scaled_x = int(x * target_width / source_width)
+            scaled_y = int(y * target_height / source_height)
+        else:
+            scaled_x, scaled_y = x, y
+            target_width, target_height = source_width, source_height
+        
+        vnc = VNCClient(host=HOST, port=PORT, password=PASSWORD, username=USERNAME)
+        
+        success, error = vnc.connect()
+        if not success:
+            return [TextContent(type="text", text=f"Failed to connect: {error}")]
+        
+        button_map = {1: "left", 2: "middle", 3: "right"}
+        button_name = button_map.get(button, "left")
+        
+        # Send double-click using PiKVM API
+        success = vnc.send_mouse_click(scaled_x, scaled_y, button=button_name, double_click=True)
+        
+        vnc.close()
+        
+        if success:
+            return [TextContent(type="text", text=f"Mouse double-click (button {button}) from source ({x}, {y}) to target ({scaled_x}, {scaled_y}) succeeded\nSource dimensions: {source_width}x{source_height}\nTarget dimensions: {target_width}x{target_height}\nScale factors: {target_width/source_width:.4f}x, {target_height/source_height:.4f}y")]
+        else:
+            return [TextContent(type="text", text=f"Mouse double-click failed")]
+            
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error during mouse double-click: {str(e)}")]
+
+
+# 3. UPDATE MOUSE SCROLL FUNCTION
+@server.call_tool()
+async def remote_macos_mouse_scroll(arguments: dict) -> list[TextContent]:
+    """Handle mouse scroll with PiKVM API compatibility."""
+    try:
+        x = int(arguments.get("x", 0))
+        y = int(arguments.get("y", 0))
+        direction = arguments.get("direction", "down")
+        source_width = int(arguments.get("source_width", 1366))
+        source_height = int(arguments.get("source_height", 768))
+        
+        # Scale coordinates
+        success, screen_data, error, dimensions = await capture_vnc_screen(
+            host=HOST, port=PORT, password=PASSWORD, username=USERNAME
+        )
+        
+        if success and dimensions:
+            target_width, target_height = dimensions
+            scaled_x = int(x * target_width / source_width)
+            scaled_y = int(y * target_height / source_height)
+        else:
+            scaled_x, scaled_y = x, y
+            target_width, target_height = source_width, source_height
+        
+        vnc = VNCClient(host=HOST, port=PORT, password=PASSWORD, username=USERNAME)
+        
+        success, error = vnc.connect()
+        if not success:
+            return [TextContent(type="text", text=f"Failed to connect: {error}")]
+        
+        # Send scroll using PiKVM API
+        success = vnc.send_mouse_scroll(scaled_x, scaled_y, direction)
+        
+        vnc.close()
+        
+        if success:
+            return [TextContent(type="text", text=f"Mouse scroll {direction} at ({scaled_x}, {scaled_y}) succeeded")]
+        else:
+            return [TextContent(type="text", text=f"Mouse scroll failed")]
+            
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error during mouse scroll: {str(e)}")]
+
+
+# 4. UPDATE SEND KEYS FUNCTION - MOST IMPORTANT FIX
+@server.call_tool()
+async def remote_macos_send_keys(arguments: dict) -> list[TextContent]:
+    """Handle keyboard input with PiKVM API compatibility."""
+    try:
+        vnc = VNCClient(host=HOST, port=PORT, password=PASSWORD, username=USERNAME)
+        
+        success, error = vnc.connect()
+        if not success:
+            return [TextContent(type="text", text=f"Failed to connect: {error}")]
+        
+        # Handle different types of keyboard input
+        if "text" in arguments:
+            # Send text string
+            text = arguments["text"]
+            success = vnc.send_text(text)
+            result_msg = f"Sent text: '{text}'" if success else f"Failed to send text: '{text}'"
+            
+        elif "key_combination" in arguments:
+            # Send key combination (e.g., "ctrl+c")
+            key_combo = arguments["key_combination"]
+            keys = [k.strip().title() for k in key_combo.split("+")]
+            success = vnc.send_key_combination(keys)
+            result_msg = f"Sent key combination: {key_combo}" if success else f"Failed to send key combination: {key_combo}"
+            
+        elif "special_key" in arguments:
+            # Send special key (e.g., "enter", "backspace")
+            special_key = arguments["special_key"]
+            # Map common special keys to PiKVM key names
+            key_map = {
+                "enter": "Return",
+                "return": "Return", 
+                "backspace": "BackSpace",
+                "delete": "Delete",
+                "tab": "Tab",
+                "escape": "Escape",
+                "space": "space",
+                "up": "Up",
+                "down": "Down",
+                "left": "Left",
+                "right": "Right",
+                "home": "Home",
+                "end": "End",
+                "pageup": "Page_Up",
+                "pagedown": "Page_Down"
+            }
+            
+            key_name = key_map.get(special_key.lower(), special_key)
+            success = vnc.send_key_press(key_name)
+            result_msg = f"Sent special key: {special_key}" if success else f"Failed to send special key: {special_key}"
+            
+        else:
+            vnc.close()
+            return [TextContent(type="text", text="No valid key input provided")]
+        
+        vnc.close()
+        return [TextContent(type="text", text=result_msg)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error during keyboard input: {str(e)}")]
+
+
+# 5. UPDATE MOUSE MOVE FUNCTION
+@server.call_tool()
+async def remote_macos_mouse_move(arguments: dict) -> list[TextContent]:
+    """Handle mouse movement with PiKVM API compatibility."""
+    try:
+        x = int(arguments.get("x", 0))
+        y = int(arguments.get("y", 0))
+        source_width = int(arguments.get("source_width", 1366))
+        source_height = int(arguments.get("source_height", 768))
+        
+        # Scale coordinates
+        success, screen_data, error, dimensions = await capture_vnc_screen(
+            host=HOST, port=PORT, password=PASSWORD, username=USERNAME
+        )
+        
+        if success and dimensions:
+            target_width, target_height = dimensions
+            scaled_x = int(x * target_width / source_width)
+            scaled_y = int(y * target_height / source_height)
+        else:
+            scaled_x, scaled_y = x, y
+            target_width, target_height = source_width, source_height
+        
+        vnc = VNCClient(host=HOST, port=PORT, password=PASSWORD, username=USERNAME)
+        
+        success, error = vnc.connect()
+        if not success:
+            return [TextContent(type="text", text=f"Failed to connect: {error}")]
+        
+        # Send mouse move using PiKVM API
+        success = vnc.send_mouse_move(scaled_x, scaled_y)
+        
+        vnc.close()
+        
+        if success:
+            return [TextContent(type="text", text=f"Mouse move to ({scaled_x}, {scaled_y}) succeeded")]
+        else:
+            return [TextContent(type="text", text=f"Mouse move failed")]
+            
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error during mouse move: {str(e)}")]
+
+
+# 6. UPDATE DRAG AND DROP FUNCTION
+@server.call_tool()
+async def remote_macos_mouse_drag_n_drop(arguments: dict) -> list[TextContent]:
+    """Handle mouse drag and drop with PiKVM API compatibility."""
+    try:
+        start_x = int(arguments.get("start_x", 0))
+        start_y = int(arguments.get("start_y", 0))
+        end_x = int(arguments.get("end_x", 0))
+        end_y = int(arguments.get("end_y", 0))
+        button = int(arguments.get("button", 1))
+        source_width = int(arguments.get("source_width", 1366))
+        source_height = int(arguments.get("source_height", 768))
+        
+        # Scale coordinates
+        success, screen_data, error, dimensions = await capture_vnc_screen(
+            host=HOST, port=PORT, password=PASSWORD, username=USERNAME
+        )
+        
+        if success and dimensions:
+            target_width, target_height = dimensions
+            scaled_start_x = int(start_x * target_width / source_width)
+            scaled_start_y = int(start_y * target_height / source_height)
+            scaled_end_x = int(end_x * target_width / source_width)
+            scaled_end_y = int(end_y * target_height / source_height)
+        else:
+            scaled_start_x, scaled_start_y = start_x, start_y
+            scaled_end_x, scaled_end_y = end_x, end_y
+            target_width, target_height = source_width, source_height
+        
+        vnc = VNCClient(host=HOST, port=PORT, password=PASSWORD, username=USERNAME)
+        
+        success, error = vnc.connect()
+        if not success:
+            return [TextContent(type="text", text=f"Failed to connect: {error}")]
+        
+        button_map = {1: "left", 2: "middle", 3: "right"}
+        button_name = button_map.get(button, "left")
+        
+        # Simulate drag and drop with PiKVM API
+        # Move to start position
+        vnc.send_mouse_move(scaled_start_x, scaled_start_y)
+        # Press button
+        vnc.send_mouse_event(scaled_start_x, scaled_start_y, button_name, True)
+        # Move to end position while holding button
+        vnc.send_mouse_move(scaled_end_x, scaled_end_y)
+        # Release button
+        vnc.send_mouse_event(scaled_end_x, scaled_end_y, button_name, False)
+        
+        vnc.close()
+        
+        return [TextContent(type="text", text=f"Mouse drag from ({scaled_start_x}, {scaled_start_y}) to ({scaled_end_x}, {scaled_end_y}) completed")]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error during mouse drag: {str(e)}")]
+
+
+# 7. KEEP SCREENSHOT FUNCTION AS IS (already working)
+# The remote_macos_get_screen function should work as-is since we've implemented
+# the capture_vnc_screen function properly
+
+
+# Additional helper function for the server.py:
+def get_connection_params():
+    """Get connection parameters from environment or defaults."""
+    import os
+    
+    # For PiKVM, default to HTTPS port 443
+    HOST = os.getenv("PIKVM_HOST", "192.168.88.138")
+    PORT = int(os.getenv("PIKVM_PORT", "443"))
+    USERNAME = os.getenv("PIKVM_USERNAME", "admin")
+    PASSWORD = os.getenv("PIKVM_PASSWORD", "admin")
+    
+    return HOST, PORT, USERNAME, PASSWORD
+
+# Update the global variables at the top of server.py:
+HOST, PORT, USERNAME, PASSWORD = get_connection_params()
