@@ -20,7 +20,7 @@ logger.setLevel(logging.DEBUG)
 
 # Load environment variables for VNC connection
 MACOS_HOST = os.environ.get('MACOS_HOST', '')
-MACOS_PORT = int(os.environ.get('MACOS_PORT', '5900'))
+MACOS_PORT = int(os.environ.get('MACOS_PORT', '443'))
 MACOS_USERNAME = os.environ.get('MACOS_USERNAME', '')
 MACOS_PASSWORD = os.environ.get('MACOS_PASSWORD', '')
 VNC_ENCRYPTION = os.environ.get('VNC_ENCRYPTION', 'prefer_on')
