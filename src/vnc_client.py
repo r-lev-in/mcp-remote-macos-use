@@ -48,7 +48,7 @@ async def capture_vnc_screen(host: str, port: int, password: str, username: Opti
     """
     logger.debug(f"Connecting to remote MacOs machine at {host}:{port} with encryption: {encryption}")
 
-    # Initialize VNC client (now using PiKVM API)
+    # Initialize VNC client (now using PiKVM API) - ignore encryption parameter
     vnc = VNCClient(host=host, port=port, password=password, username=username)
 
     try:
@@ -105,17 +105,18 @@ async def capture_vnc_screen(host: str, port: int, password: str, username: Opti
 class VNCClient:
     """PiKVM API client for remote control operations."""
     
-    def __init__(self, host: str, username: str = "admin", password: str = "admin", 
-                 port: int = 443, use_https: bool = True):
+    def __init__(self, host: str, port: int = 443, password: str = "admin", username: str = "admin", 
+                 encryption: str = "prefer_on", use_https: bool = True):
         """
         Initialize PiKVM client.
         
         Args:
             host: PiKVM hostname or IP address
-            username: PiKVM username (default: admin)
-            password: PiKVM password (default: admin)
             port: PiKVM port (default: 443 for HTTPS, 80 for HTTP)
+            password: PiKVM password (default: admin)
+            username: PiKVM username (default: admin)
             use_https: Whether to use HTTPS (default: True)
+            encryption: Legacy VNC parameter (ignored for PiKVM compatibility)
         """
         self.host = host
         self.username = username
