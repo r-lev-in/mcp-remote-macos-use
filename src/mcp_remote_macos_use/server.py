@@ -13,6 +13,7 @@ import os
 from base64 import b64encode
 from datetime import datetime
 import sys
+import gradio as gr
 
 # Import MCP server libraries
 from mcp.server.models import InitializationOptions
@@ -51,7 +52,7 @@ logger.setLevel(logging.DEBUG)
 
 # Load environment variables for VNC connection
 MACOS_HOST = os.environ.get('MACOS_HOST', '')
-MACOS_PORT = int(os.environ.get('MACOS_PORT', '5900'))
+MACOS_PORT = int(os.environ.get('MACOS_PORT', '443'))
 MACOS_USERNAME = os.environ.get('MACOS_USERNAME', '')
 MACOS_PASSWORD = os.environ.get('MACOS_PASSWORD', '')
 VNC_ENCRYPTION = os.environ.get('VNC_ENCRYPTION', 'prefer_on')
@@ -80,6 +81,16 @@ if not MACOS_PASSWORD:
     logger.error("MACOS_PASSWORD environment variable is required but not set")
     raise ValueError("MACOS_PASSWORD environment variable is required but not set")
 
+def greet(name, intensity):
+    return "Hello, " + name + "!" * int(intensity)
+
+demo = gr.Interface(
+    fn=greet,
+    inputs=["text", "slider"],
+    outputs=["text"],
+)
+
+demo.launch()
 
 async def main():
     """Run the Remote MacOS MCP server."""

@@ -19,14 +19,11 @@ PORT = int(os.getenv("PIKVM_PORT", "443"))
 USERNAME = os.getenv("PIKVM_USERNAME", "admin")
 PASSWORD = os.getenv("PIKVM_PASSWORD", "admin")
 
+async def handle_remote_macos_get_screen(arguments: dict[str, Any]) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
 
-async def get_screen() -> Tuple[bool, Optional[bytes], Optional[str], Optional[Tuple[int, int]]]:
-    """
-    Capture screenshot using PiKVM API.
-    
-    Returns:
-        Tuple of (success, image_data, error_message, dimensions)
-    """
+# Capture screenshot using PiKVM API.    
+# Returns:
+# Tuple of (success, image_data, error_message, dimensions)
     try:
         return await capture_vnc_screen(
             host=HOST,
@@ -38,9 +35,7 @@ async def get_screen() -> Tuple[bool, Optional[bytes], Optional[str], Optional[T
         logger.error(f"Screenshot capture failed: {str(e)}")
         return False, None, str(e), None
 
-
-async def mouse_click(x: int, y: int, button: int = 1, source_width: Optional[int] = None, 
-                     source_height: Optional[int] = None) -> Tuple[bool, str]:
+def handle_remote_macos_mouse_click(x: int, y: int, button: int = 1, source_width: Optional[int] = None, source_height: Optional[int] = None) -> Tuple[bool, str]:
     """
     Perform mouse click using PiKVM API.
     
@@ -111,8 +106,7 @@ async def mouse_click(x: int, y: int, button: int = 1, source_width: Optional[in
         logger.error(f"Mouse click error: {str(e)}")
         return False, f"Error during mouse click: {str(e)}"
 
-
-async def mouse_double_click(x: int, y: int, button: int = 1, source_width: Optional[int] = None,
+def handle_remote_macos_mouse_double_click(x: int, y: int, button: int = 1, source_width: Optional[int] = None,
                            source_height: Optional[int] = None) -> Tuple[bool, str]:
     """
     Perform mouse double-click using PiKVM API.
@@ -170,7 +164,7 @@ async def mouse_double_click(x: int, y: int, button: int = 1, source_width: Opti
         return False, f"Error during mouse double-click: {str(e)}"
 
 
-async def mouse_scroll(x: int, y: int, direction: str, source_width: Optional[int] = None,
+def handle_remote_macos_mouse_scroll(x: int, y: int, direction: str, source_width: Optional[int] = None,
                       source_height: Optional[int] = None) -> Tuple[bool, str]:
     """
     Perform mouse scroll using PiKVM API.
@@ -218,7 +212,7 @@ async def mouse_scroll(x: int, y: int, direction: str, source_width: Optional[in
         return False, f"Error during mouse scroll: {str(e)}"
 
 
-async def send_keys(text: Optional[str] = None, key_combination: Optional[str] = None,
+def handle_remote_macos_send_keys(text: Optional[str] = None, key_combination: Optional[str] = None,
                    special_key: Optional[str] = None) -> Tuple[bool, str]:
     """
     Send keyboard input using PiKVM API.
@@ -300,7 +294,7 @@ async def send_keys(text: Optional[str] = None, key_combination: Optional[str] =
         return False, f"Error during keyboard input: {str(e)}"
 
 
-async def mouse_move(x: int, y: int, source_width: Optional[int] = None,
+def handle_remote_macos_mouse_move(x: int, y: int, source_width: Optional[int] = None,
                     source_height: Optional[int] = None) -> Tuple[bool, str]:
     """
     Move mouse cursor using PiKVM API.
@@ -347,7 +341,7 @@ async def mouse_move(x: int, y: int, source_width: Optional[int] = None,
         return False, f"Error during mouse move: {str(e)}"
 
 
-async def mouse_drag_drop(start_x: int, start_y: int, end_x: int, end_y: int,
+def handle_remote_macos_mouse_drag_drop(start_x: int, start_y: int, end_x: int, end_y: int,
                          button: int = 1, source_width: Optional[int] = None,
                          source_height: Optional[int] = None) -> Tuple[bool, str]:
     """
